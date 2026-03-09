@@ -10,6 +10,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 logging.basicConfig(level=logging.INFO)
 
 # --- СОЗЛАМАЛАР ---
+# Сизнинг амалдаги токенингиз
 API_TOKEN = '8614302276:AAFNVLBBxKclvOrSmV5GHHYfg6vEOZsESo' 
 ADMIN_ID = 58170268 
 ADMIN_PHONE = "+998 91 404 15 15"
@@ -17,27 +18,33 @@ ADMIN_PHONE = "+998 91 404 15 15"
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# МАЪЛУМОТЛАР
-MENU = {"🍔 Чизбургер": 35000, "🍔 Гамбургер": 30000, "🥤 Pepsi 1.5L": 15000}
+# МАЪЛУМОТЛАР (МEНЮ)
+MENU = {
+    "🍔 Чизбургер": 35000, 
+    "🍔 Гамбургер": 30000, 
+    "🥤 Pepsi 1.5L": 15000,
+    "🍟 Фри": 15000
+}
 user_data = {} 
 temp_data = {}
 
-# --- RENDER УЧУН WEB SERVER ҚИСМИ ---
+# --- RENDER УЧУН ВEБ СEРВEР ҚИСМИ ---
+# Бу қисм "No open ports detected" хатосини олдини олади
 async def handle(request):
-    return web.Response(text="Бот ишлаяпти!")
+    return web.Response(text="TheCheffBurger Bot ишлаяпти!")
 
 async def start_web_server():
     app = web.Application()
     app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    # Render тақдим этадиган PORT-ни оламиз ёки 10000-ни ишлатамиз
+    # Render тақдим этадиган PORT ўзгарувчисини оламиз
     port = int(os.getenv("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"Web server {port} портда ишга тушди.")
+    logging.info(f"Вeб-сeрвeр {port}-портда ишга тушди.")
 
-# --- БОТ ЛОГИКАСИ ---
+# --- БОТ ФУНКЦИЯЛАРИ ---
 def get_user_storage(uid):
     if uid not in user_data:
         user_data[uid] = {"items": [], "lat": None, "lon": None, "state": None, "last_item": None}
@@ -104,7 +111,7 @@ async def view_cart(message: types.Message):
     total = 0
     for i, item in enumerate(data["items"], 1):
         sub = item['price'] * item['qty']
-        res += f"{i}. {item['name']} x {item['qty']} = {sub:,}\n"
+        res += f"{i}. {item['name']} x {item['qty']} = {sub:,} сўм\n"
         total += sub
     res += f"\n💰 Жами: {total:,} сўм"
     builder = ReplyKeyboardBuilder()
@@ -121,23 +128,23 @@ async def clear_cart(message: types.Message):
 @dp.message(F.text == "🚖 Буюртма бериш")
 async def order(message: types.Message):
     builder = ReplyKeyboardBuilder()
-    builder.row(types.KeyboardButton(text="📍 Локация", request_location=True))
-    builder.row(types.KeyboardButton(text="📱 Телефон", request_contact=True))
-    await message.answer("Локация ва телефон юборинг:", reply_markup=builder.as_markup(resize_keyboard=True))
+    builder.row(types.KeyboardButton(text="📍 Локация юбориш", request_location=True))
+    builder.row(types.KeyboardButton(text="📱 Тeлeфон юбориш", request_contact=True))
+    await message.answer("Буюртмани якунлаш учун локация ва тeлeфон рақамингизни юборинг:", reply_markup=builder.as_markup(resize_keyboard=True))
 
 @dp.message(F.location)
 async def handle_loc(message: types.Message):
     data = get_user_storage(message.from_user.id)
     data["lat"], data["lon"] = message.location.latitude, message.location.longitude
-    await bot.send_message(ADMIN_ID, f"📍 Локация келди: {message.from_user.full_name}")
-    await bot.send_location(ADMIN_ID, data["lat"], data["lon"])
-    await message.answer("✅ Локация қабул қилинди. Энди телефон рақамингизни юборинг.")
+    await message.answer("✅ Локация қабул қилинди. Энди телефон рақамингизни юборинг (пастдаги тугма орқали).")
 
 @dp.message(F.contact)
 async def handle_con(message: types.Message):
     uid = message.from_user.id
     data = get_user_storage(uid)
-    if not data["items"]: return
+    if not data["items"]:
+        await message.answer("Саватчангиз бўш!"); return
+    
     txt = f"🔔 **ЯНГИ БУЮРТМА!**\n👤 {message.from_user.full_name}\n📞 {message.contact.phone_number}\n\n"
     total = 0
     for item in data["items"]:
@@ -145,48 +152,14 @@ async def handle_con(message: types.Message):
         txt += f"- {item['name']} ({item['qty']} та)\n"
         total += sub
     txt += f"\n💰 Жами: {total:,} сўм"
+    
+    # Админга юбориш
     await bot.send_message(ADMIN_ID, txt)
-    await message.answer("✅ Буюртма юборилди!", reply_markup=main_menu(uid))
-    data["items"] = []
-
-@dp.message(F.text == "⚙️ Админ Панель")
-async def admin(message: types.Message):
-    if message.from_user.id != ADMIN_ID: return
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➕ Қўшиш", callback_data="add")
-    builder.button(text="🗑 Ўчириш", callback_data="del")
-    await message.answer("Бошқарув:", reply_markup=builder.as_markup())
-
-@dp.callback_query(F.data == "add")
-async def add(c: types.CallbackQuery):
-    temp_data[ADMIN_ID] = "name"
-    await c.message.answer("Номини ёзинг:"); await c.answer()
-
-@dp.message(lambda m: temp_data.get(ADMIN_ID) == "name")
-async def s_name(m: types.Message):
-    temp_data["n"] = m.text; temp_data[ADMIN_ID] = "price"
-    await m.answer("Нархини ёзинг:")
-
-@dp.message(lambda m: temp_data.get(ADMIN_ID) == "price")
-async def s_price(m: types.Message):
-    try:
-        MENU[temp_data["n"]] = int(m.text)
-        temp_data[ADMIN_ID] = None
-        await m.answer("✅ Қўшилди!", reply_markup=main_menu(ADMIN_ID))
-    except: await m.answer("Рақам ёзинг!")
-
-@dp.callback_query(F.data == "del")
-async def d_list(c: types.CallbackQuery):
-    b = InlineKeyboardBuilder()
-    for k in MENU.keys(): b.button(text=f"❌ {k}", callback_data=f"r_{k}")
-    b.adjust(1)
-    await c.message.edit_text("Ўчириш:", reply_markup=b.as_markup())
-
-@dp.callback_query(F.data.startswith("r_"))
-async def remove(c: types.CallbackQuery):
-    n = c.data.replace("r_", "")
-    if n in MENU: del MENU[n]
-    await admin(c.message); await c.answer()
+    if data["lat"]:
+        await bot.send_location(ADMIN_ID, data["lat"], data["lon"])
+    
+    await message.answer("✅ Буюртмангиз қабул қилинди! Тез орада боғланамиз.", reply_markup=main_menu(uid))
+    data["items"] = [] # Саватчани тозалаш
 
 @dp.message(F.text == "⬅️ Ортга")
 async def back(m: types.Message):
@@ -194,11 +167,14 @@ async def back(m: types.Message):
 
 # --- АСОСИЙ ИШГА ТУШИРИШ ---
 async def main():
-    # Бир вақтда ҳам веб-серверни, ҳам ботни ишга туширамиз
+    # Вeб-сeрвeр ва Ботни параллел равишда юргазиш
     await asyncio.gather(
         start_web_server(),
         dp.start_polling(bot)
     )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logging.error("Бот тўхтатилди!")
