@@ -10,7 +10,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder
 # Сиз берган янги токен
 API_TOKEN = '8614302276:AAHzG09FGl-4R5r4_4VNSfOD0Oemhlshfbs'
 # Сизнинг Telegram ID-нгиз (Админ панель кўриниши учун)
-ADMIN_ID = 8614302276 
+ADMIN_ID = 58170268 
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
@@ -91,3 +91,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
