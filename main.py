@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
@@ -8,8 +10,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 logging.basicConfig(level=logging.INFO)
 
 # --- СОЗЛАМАЛАР ---
-# BotFather-дан олган ЭНГ ЯНГИ токенингизни шу ерга қўйинг
-API_TOKEN = '8614302276:AAFNBVLBBxKclvOrSmV5GHHYfg6vEOZsESo' 
+API_TOKEN = '8614302276:AAFNVLBBxKclvOrSmV5GHHYfg6vEOZsESo' 
 ADMIN_ID = 58170268 
 ADMIN_PHONE = "+998 91 404 15 15"
 
@@ -21,6 +22,22 @@ MENU = {"🍔 Чизбургер": 35000, "🍔 Гамбургер": 30000, "�
 user_data = {} 
 temp_data = {}
 
+# --- RENDER УЧУН WEB SERVER ҚИСМИ ---
+async def handle(request):
+    return web.Response(text="Бот ишлаяпти!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Render тақдим этадиган PORT-ни оламиз ёки 10000-ни ишлатамиз
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Web server {port} портда ишга тушди.")
+
+# --- БОТ ЛОГИКАСИ ---
 def get_user_storage(uid):
     if uid not in user_data:
         user_data[uid] = {"items": [], "lat": None, "lon": None, "state": None, "last_item": None}
@@ -173,11 +190,15 @@ async def remove(c: types.CallbackQuery):
 
 @dp.message(F.text == "⬅️ Ортга")
 async def back(m: types.Message):
-    await m.answer("Меню.", reply_markup=main_menu(m.from_user.id))
+    await m.answer("Бош меню.", reply_markup=main_menu(m.from_user.id))
 
+# --- АСОСИЙ ИШГА ТУШИРИШ ---
 async def main():
-    print("Бот Render-да ишга тушди...")
-    await dp.start_polling(bot)
+    # Бир вақтда ҳам веб-серверни, ҳам ботни ишга туширамиз
+    await asyncio.gather(
+        start_web_server(),
+        dp.start_polling(bot)
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
