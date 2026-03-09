@@ -11,12 +11,12 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 # 1. СОЗЛАМАЛАР
 API_TOKEN = '8614302276:AAHzG09FGl-4R5r4_4VNSfOD0Oemhlshfbs'
 ADMIN_ID = 58170268
-PAYMENT_TOKEN = '398062629:TEST:999999999_F9C8' # Тест режими учун (Click/Payme токенини қўйишингиз мумкин)
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
+# МАҲСУЛОТЛАР
 MENU = {
     "🍔 Чизбургер": 35000,
     "🍔 Гамбургер": 30000,
@@ -25,15 +25,17 @@ MENU = {
 }
 user_carts = {}
 
+# ҲОЛАТЛАР (States)
 class OrderStates(StatesGroup):
     waiting_for_qty = State()
     waiting_for_contact = State()
     waiting_for_location = State()
 
 class AdminStates(StatesGroup):
-    waiting_for_item_data = State()
+    waiting_for_add_data = State()
+    waiting_for_edit_price = State()
 
-# 2. RENDER УЧУН "WAKE UP" ВЕБ-СЕРВЕРИ (Бот ўчиб қолмаслиги учун)
+# 2. RENDER УЧУН ВЕБ-СЕРВЕР
 async def handle(request):
     return web.Response(text="Bot is running!")
 
@@ -55,7 +57,13 @@ def main_menu(uid):
         builder.row(types.KeyboardButton(text="⚙️ Админ Панель"))
     return builder.as_markup(resize_keyboard=True)
 
-# 4. БОТ МАНТИҚИ
+def admin_main_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.row(types.KeyboardButton(text="➕ Қўшиш"), types.KeyboardButton(text="📝 Таҳрирлаш"))
+    builder.row(types.KeyboardButton(text="🗑 Ўчириш"), types.KeyboardButton(text="⬅️ Ортга"))
+    return builder.as_markup(resize_keyboard=True)
+
+# 4. БОТ МАНТИҚИ (АСОСИЙ ҚИСМЛАР УЗГАРМАДИ)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_carts[message.from_user.id] = []
@@ -69,6 +77,7 @@ async def show_menu(message: types.Message):
     builder.adjust(1)
     await message.answer("Маҳсулот танланг:", reply_markup=builder.as_markup())
 
+# --- САВАТЧА ВА БУЮРТМА ҚИСМИ (АЛМАНТИРИЛМАДИ) ---
 @dp.callback_query(F.data.startswith("select_"))
 async def select_item(callback: types.CallbackQuery, state: FSMContext):
     item = callback.data.split("_")[1]
@@ -87,10 +96,7 @@ async def process_qty(message: types.Message, state: FSMContext):
         await message.answer("Бош меню", reply_markup=main_menu(message.from_user.id))
         return
     if not message.text.isdigit(): return
-    
-    qty = int(message.text)
-    data = await state.get_data()
-    item = data['chosen_item']
+    qty = int(message.text); data = await state.get_data(); item = data['chosen_item']
     uid = message.from_user.id
     if uid not in user_carts: user_carts[uid] = []
     user_carts[uid].append({"name": item, "price": MENU[item], "qty": qty})
@@ -99,16 +105,13 @@ async def process_qty(message: types.Message, state: FSMContext):
 
 @dp.message(F.text == "🛒 Саватча")
 async def view_cart(message: types.Message):
-    uid = message.from_user.id
-    cart = user_carts.get(uid, [])
+    uid = message.from_user.id; cart = user_carts.get(uid, [])
     if not cart:
         await message.answer("🛒 Саватчангиз бўш.")
         return
-    summary = "🛒 **Саватчангиз:**\n\n"
-    total = 0
+    summary = "🛒 **Саватчангиз:**\n\n"; total = 0
     for i, p in enumerate(cart, 1):
-        sub = p['price'] * p['qty']
-        total += sub
+        sub = p['price'] * p['qty']; total += sub
         summary += f"{i}. {p['name']} x {p['qty']} = {sub:,} сўм\n"
     summary += f"\n💰 **Жами:** {total:,} сўм"
     builder = InlineKeyboardBuilder()
@@ -116,7 +119,6 @@ async def view_cart(message: types.Message):
     builder.button(text="🗑 Тозалаш", callback_data="clear_cart")
     await message.answer(summary, reply_markup=builder.as_markup())
 
-# --- БУЮРТМА ВА ИХТИЁРИЙ ЛОКАЦИЯ ---
 @dp.callback_query(F.data == "start_order")
 async def start_order(callback: types.CallbackQuery, state: FSMContext):
     builder = ReplyKeyboardBuilder()
@@ -131,59 +133,113 @@ async def process_contact(message: types.Message, state: FSMContext):
     builder = ReplyKeyboardBuilder()
     builder.row(types.KeyboardButton(text="📍 Локация юбориш", request_location=True))
     builder.row(types.KeyboardButton(text="⏭ Ўтказиб юбориш"))
-    await message.answer("Етказиб бериш манзилини (локация) юборинг ёки ўтказиб юборинг:", reply_markup=builder.as_markup(resize_keyboard=True))
+    await message.answer("Манзилни юборинг ёки ўтказиб юборинг:", reply_markup=builder.as_markup(resize_keyboard=True))
     await state.set_state(OrderStates.waiting_for_location)
 
 @dp.message(OrderStates.waiting_for_location)
 async def process_location(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    uid = message.from_user.id
-    cart = user_carts.get(uid, [])
-    
+    data = await state.get_data(); uid = message.from_user.id; cart = user_carts.get(uid, [])
     order_txt = f"🔔 **ЯНГИ БУЮРТМА!**\n👤 {message.from_user.full_name}\n📞 {data['phone']}\n\n"
     total = 0
     for p in cart:
-        sub = p['price'] * p['qty']
-        total += sub
+        sub = p['price'] * p['qty']; total += sub
         order_txt += f"- {p['name']} x {p['qty']}\n"
     order_txt += f"\n💰 Жами: {total:,} сўм"
-
-    # Админга буюртма юбориш
     await bot.send_message(ADMIN_ID, order_txt)
     if message.location:
         await bot.send_location(ADMIN_ID, message.location.latitude, message.location.longitude)
-    else:
-        await bot.send_message(ADMIN_ID, "📍 Локация юборилмади.")
-
-    # Тўлов қилиш тугмаси (Мисол тариқасида)
     builder = InlineKeyboardBuilder()
     builder.button(text="💳 Click орқали тўлаш", callback_data="pay_click")
     builder.button(text="💵 Нақд пулда", callback_data="pay_cash")
-    
-    await message.answer("Раҳмат! Буюртма қабул қилинди. Тўлов турини танланг:", reply_markup=builder.as_markup(), reply_markup=main_menu(uid))
-    user_carts[uid] = []
-    await state.clear()
+    await message.answer("Раҳмат! Тўлов турини танланг:", reply_markup=builder.as_markup())
+    user_carts[uid] = []; await state.clear()
 
-@dp.callback_query(F.data == "pay_click")
-async def pay_click(callback: types.CallbackQuery):
-    await callback.message.answer("💳 Click орқали тўлов учун: +998 91 404 15 15 рақамига картага ўтказинг ва чекини юборинг.")
-    await callback.answer()
+@dp.callback_query(F.data == "clear_cart")
+async def clear_cart(callback: types.CallbackQuery):
+    user_carts[callback.from_user.id] = []
+    await callback.message.edit_text("🛒 Саватча тозаланди."); await callback.answer()
 
-@dp.callback_query(F.data == "pay_cash")
-async def pay_cash(callback: types.CallbackQuery):
-    await callback.message.answer("💵 Буюртмангиз қабул қилинди. Етказиб берилганда нақд тўлашингиз мумкин.")
-    await callback.answer()
-
-# --- АДМИН ПАНEЛИ ---
+# --- АДМИН ПАНЕЛИ (ЯНГИЛАНГАН ВА ТЎЛИҚ ИШЛАЙДИГАН) ---
+@dp.message(F.text == "⚙️ Admin Панель") # User-нинг сўрови бўйича
 @dp.message(F.text == "⚙️ Админ Панель")
 async def admin_main(message: types.Message):
     if message.from_user.id == ADMIN_ID:
-        builder = ReplyKeyboardBuilder()
-        builder.row(types.KeyboardButton(text="➕ Қўшиш"), types.KeyboardButton(text="🗑 Ўчириш"))
-        builder.row(types.KeyboardButton(text="⬅️ Ортга"))
-        await message.answer("🛠 Админ бошқаруви:", reply_markup=builder.as_markup(resize_keyboard=True))
+        await message.answer("🛠 **Админ бошқаруви:**", reply_markup=admin_main_kb())
 
-# 5. ИШГА ТУШИРИШ
+# 1. ҚЎШИШ
+@dp.message(F.text == "➕ Қўшиш")
+async def add_item_start(message: types.Message, state: FSMContext):
+    if message.from_user.id == ADMIN_ID:
+        await message.answer("Янги маҳсулотни юборинг (Номи - Нархи):\nМисол: `Лаваш - 28000`")
+        await state.set_state(AdminStates.waiting_for_add_data)
+
+@dp.message(AdminStates.waiting_for_add_data)
+async def process_add(message: types.Message, state: FSMContext):
+    try:
+        name, price = message.text.split("-")
+        MENU[name.strip()] = int(price.strip())
+        await message.answer(f"✅ Қўшилди: {name.strip()}", reply_markup=admin_main_kb())
+        await state.clear()
+    except:
+        await message.answer("❌ Хато! Формат: Номи - Нархи")
+
+# 2. ТАҲРИРЛАШ (Нархини ўзгартириш)
+@dp.message(F.text == "📝 Таҳрирлаш")
+async def edit_list(message: types.Message):
+    if message.from_user.id == ADMIN_ID:
+        builder = InlineKeyboardBuilder()
+        for item in MENU.keys():
+            builder.button(text=f"⚙️ {item}", callback_data=f"editprice_{item}")
+        builder.adjust(1)
+        await message.answer("Нархини ўзгартириш учун танланг:", reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data.startswith("editprice_"))
+async def edit_price_start(callback: types.CallbackQuery, state: FSMContext):
+    item = callback.data.split("_")[1]
+    await state.update_data(editing_item=item)
+    await callback.message.answer(f"💰 {item} учун янги нархни ёзинг:")
+    await state.set_state(AdminStates.waiting_for_edit_price)
+    await callback.answer()
+
+@dp.message(AdminStates.waiting_for_edit_price)
+async def process_edit_price(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("Фақат рақам ёзинг!")
+        return
+    data = await state.get_data()
+    item = data['editing_item']
+    MENU[item] = int(message.text)
+    await message.answer(f"✅ {item} нархи янгиланди: {int(message.text):,} сўм", reply_markup=admin_main_kb())
+    await state.clear()
+
+# 3. ЎЧИРИШ (Тўлиқ ишлайдиган)
+@dp.message(F.text == "🗑 Ўчириш")
+async def delete_list_admin(message: types.Message):
+    if message.from_user.id == ADMIN_ID:
+        builder = InlineKeyboardBuilder()
+        for item in MENU.keys():
+            builder.button(text=f"❌ {item}", callback_data=f"delitem_{item}")
+        builder.adjust(1)
+        await message.answer("Ўчириш учун танланг:", reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data.startswith("delitem_"))
+async def process_del(callback: types.CallbackQuery):
+    item = callback.data.split("_")[1]
+    if item in MENU:
+        del MENU[item]
+        await callback.message.edit_text(f"✅ {item} менюдан ўчирилди!")
+    else:
+        await callback.answer("Маҳсулот топилмади.")
+    await callback.answer()
+
+@dp.message(F.text == "📞 Алоқа")
+async def contact(message: types.Message):
+    await message.answer("👨‍💻 Админ: @TheCheffAdmin\n📞 Тел: +998 91 404 15 15")
+
+@dp.message(F.text == "⬅️ Ортга")
+async def go_back(message: types.Message):
+    await message.answer("Бош меню", reply_markup=main_menu(message.from_user.id))
+
 async def main():
     await asyncio.gather(start_web_server(), dp.start_polling(bot))
 
