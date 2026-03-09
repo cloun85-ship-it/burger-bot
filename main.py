@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 
 # --- СОЗЛАМАЛАР ---
 # Сизнинг амалдаги токенингиз
-API_TOKEN = '8614302276:AAFvZZ7ePYTDcgZWtTfVYnQlvZxPRehO98Q' 
+API_TOKEN = '8614302276:AAHzG09FGl-4R5r4_4VNSfOD0Oemhlshfbs' 
 ADMIN_ID = 58170268 
 ADMIN_PHONE = "+998 91 404 15 15"
 
@@ -178,4 +178,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         logging.error("Бот тўхтатилди!")
+
 
